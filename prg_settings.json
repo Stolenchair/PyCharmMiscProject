@@ -1,0 +1,43 @@
+{
+  "prg": {
+    "sheet": "ПРГ",
+    "start_row": "3",
+    "mo_col": "E",
+    "settlement_col": "D",
+    "prg_id_col": "A",
+    "grs_id_col": "AH",
+    "qy_pop_col": "AY",
+    "qh_pop_col": "AZ",
+    "qy_ind_col": "BA",
+    "qh_ind_col": "BB",
+    "year_volume_col": "BE",
+    "max_hour_col": "AK"
+  },
+  "grs": {
+    "sheet": "ГРС",
+    "start_row": "2",
+    "mo_col": "C",
+    "grs_id_col": "A",
+    "grs_name_col": "B"
+  },
+  "population": {
+    "sheet": "Связь со схемой - Население",
+    "start_row": "10",
+    "mo_col": "B",
+    "settlement_col": "C",
+    "code_col": "M",
+    "expenses_col": "I",
+    "hourly_expenses_col": "J"
+  },
+  "organizations": {
+    "sheet": "Связь со схемой - Организации",
+    "start_row": "10",
+    "name_col": "E",
+    "mo_col": "C",
+    "settlement_col": "D",
+    "code_col": "M",
+    "expenses_col": "J",
+    "hourly_expenses_col": "K",
+    "grs_id_col": "L"
+  }
+}
