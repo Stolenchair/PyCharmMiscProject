@@ -36,6 +36,13 @@ class SettingsManager:
         """
         default_settings = get_default_settings()
 
+        # Add UI preferences section
+        if 'ui_preferences' not in default_settings:
+            default_settings['ui_preferences'] = {
+                'theme': 'light',
+                'window_geometry': '1500x900'
+            }
+
         try:
             if self.settings_file.exists():
                 with open(self.settings_file, 'r', encoding='utf-8') as f:
@@ -123,6 +130,33 @@ class SettingsManager:
             dict: Complete settings dictionary
         """
         return self.settings.copy()
+
+    def get_ui_preference(self, key: str, default: Any = None) -> Any:
+        """
+        Get a UI preference value.
+
+        Args:
+            key: Preference key (e.g., 'theme', 'window_geometry')
+            default: Default value if not found
+
+        Returns:
+            The preference value or default
+        """
+        if 'ui_preferences' not in self.settings:
+            return default
+        return self.settings['ui_preferences'].get(key, default)
+
+    def set_ui_preference(self, key: str, value: Any) -> None:
+        """
+        Set a UI preference value.
+
+        Args:
+            key: Preference key (e.g., 'theme', 'window_geometry')
+            value: Value to set
+        """
+        if 'ui_preferences' not in self.settings:
+            self.settings['ui_preferences'] = {}
+        self.settings['ui_preferences'][key] = value
 
     def __repr__(self):
         return f"SettingsManager(file='{self.settings_file}')"

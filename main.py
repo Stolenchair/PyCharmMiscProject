@@ -19,10 +19,7 @@ from prg.business import (
     BindingService,
     SearchService
 )
-from prg.ui import StyleManager
-
-# Import main window class
-from script import PRGPipelineManager
+from prg.ui import StyleManager, PRGPipelineManager
 
 
 def main():
@@ -48,14 +45,14 @@ def main():
     search_service = SearchService(validation_service)
     print("[OK] Business services initialized")
 
-    # Initialize UI styling
-    style_manager = StyleManager()
-    print("[OK] Style manager initialized")
+    # Initialize UI styling with saved theme preference
+    saved_theme = settings_manager.get_ui_preference('theme', 'light')
+    style_manager = StyleManager(theme=saved_theme)
+    print(f"[OK] Style manager initialized with {saved_theme} theme")
 
     # Create main window
     root = tk.Tk()
-    root.title("ПРГ Pipeline Manager v7.4")
-    root.geometry("1600x900")
+    root.title("PRG Pipeline Manager v7.4 - Professional Edition")
 
     # Create application with dependency injection
     app = PRGPipelineManager(

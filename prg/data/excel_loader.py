@@ -206,23 +206,24 @@ class ExcelLoader:
                     settlement = normalize_string(row.iloc[settlement_col])
                     code = normalize_string(row.iloc[code_col]) if code_col < len(row) else ""
 
-                    # Yearly expenses
-                    yearly_expenses = row.iloc[expenses_col] if expenses_col < len(row) and \
-                                                                pd.notna(row.iloc[expenses_col]) else ""
+                    # Yearly expenses - parse as numeric
+                    yearly_expenses = parse_numeric_value(
+                        row.iloc[expenses_col] if expenses_col < len(row) else "")
 
-                    # Hourly expenses (v7.4)
-                    hourly_expenses = row.iloc[hourly_expenses_col] if hourly_expenses_col < len(row) and \
-                                                                       pd.notna(row.iloc[hourly_expenses_col]) else ""
+                    # Hourly expenses (v7.4) - parse as numeric
+                    hourly_expenses = parse_numeric_value(
+                        row.iloc[hourly_expenses_col] if hourly_expenses_col < len(row) else "")
 
                     if mo and settlement:
                         population_data.append({
                             'id': f"pop_{settings['sheet']}_{start_row + idx}",
                             'type': 'Население',
+                            'consumer_type': 'population',
                             'mo': mo,
                             'settlement': settlement,
                             'name': f"Население {settlement}",
                             'code': code if code else '',
-                            'expenses': yearly_expenses,
+                            'yearly_expenses': yearly_expenses,
                             'hourly_expenses': hourly_expenses,
                             'sheet_name': settings['sheet'],
                             'excel_row': start_row + idx,
@@ -279,13 +280,13 @@ class ExcelLoader:
                     settlement = normalize_string(row.iloc[settlement_col])
                     code = normalize_string(row.iloc[code_col]) if code_col < len(row) else ""
 
-                    # Yearly expenses
-                    yearly_expenses = row.iloc[expenses_col] if expenses_col < len(row) and \
-                                                                pd.notna(row.iloc[expenses_col]) else ""
+                    # Yearly expenses - parse as numeric
+                    yearly_expenses = parse_numeric_value(
+                        row.iloc[expenses_col] if expenses_col < len(row) else "")
 
-                    # Hourly expenses (v7.4)
-                    hourly_expenses = row.iloc[hourly_expenses_col] if hourly_expenses_col < len(row) and \
-                                                                       pd.notna(row.iloc[hourly_expenses_col]) else ""
+                    # Hourly expenses (v7.4) - parse as numeric
+                    hourly_expenses = parse_numeric_value(
+                        row.iloc[hourly_expenses_col] if hourly_expenses_col < len(row) else "")
 
                     grs_id = normalize_string(row.iloc[grs_id_col]) if grs_id_col < len(row) else ""
 
@@ -293,13 +294,14 @@ class ExcelLoader:
                         organization_data.append({
                             'id': f"org_{settings['sheet']}_{start_row + idx}",
                             'type': 'Организация',
+                            'consumer_type': 'organization',
                             'mo': mo,
                             'settlement': settlement,
                             'name': name,
                             'code': code if code else '',
                             'grs_id': grs_id if grs_id else '',
                             'grs_id_col': grs_id_col,
-                            'expenses': yearly_expenses,
+                            'yearly_expenses': yearly_expenses,
                             'hourly_expenses': hourly_expenses,
                             'sheet_name': settings['sheet'],
                             'excel_row': start_row + idx,

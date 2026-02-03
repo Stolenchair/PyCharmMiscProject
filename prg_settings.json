@@ -39,5 +39,9 @@
     "expenses_col": "J",
     "hourly_expenses_col": "K",
     "grs_id_col": "L"
+  },
+  "ui_preferences": {
+    "theme": "light",
+    "window_geometry": "1500x898+145+37"
   }
 }
