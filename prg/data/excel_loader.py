@@ -111,6 +111,17 @@ class ExcelLoader:
                     continue
 
             print(f"[OK] Loaded PRG: {len(prg_data)}")
+
+            # Debug: show first 3 PRG entries
+            if prg_data:
+                print("\n[DEBUG] Первые 3 записи ПРГ:")
+                for i, prg in enumerate(prg_data[:3], 1):
+                    print(f"  {i}. ПРГ ID: {prg.get('prg_id', 'N/A')}")
+                    print(f"     Район (МО): {prg.get('mo', 'N/A')}")
+                    print(f"     НП: {prg.get('settlement', 'N/A')}")
+                    print(f"     ГРС ID: {prg.get('grs_id', 'N/A')}")
+                    print()
+
             return prg_data
 
         except Exception as e:

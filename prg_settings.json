@@ -10,8 +10,8 @@
     "qh_pop_col": "AZ",
     "qy_ind_col": "BA",
     "qh_ind_col": "BB",
-    "year_volume_col": "BE",
-    "max_hour_col": "AK"
+    "year_volume_col": "AV",
+    "max_hour_col": "AU"
   },
   "grs": {
     "sheet": "ГРС",

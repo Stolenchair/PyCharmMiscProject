@@ -94,7 +94,7 @@ class PRGPipelineManager:
         settings_menu = tk.Menu(menubar, tearoff=0, bg=colors['bg_panel'], fg=colors['text'],
                                activebackground=colors['primary'], activeforeground='white')
         menubar.add_cascade(label="Настройки", menu=settings_menu)
-        settings_menu.add_command(label="Настройки столбцов", command=self.show_settings_dialog)
+        settings_menu.add_command(label="Настройки столбцов", command=self.open_settings_dialog)
 
         # Инструменты
         tools_menu = tk.Menu(menubar, tearoff=0, bg=colors['bg_panel'], fg=colors['text'],
@@ -161,7 +161,7 @@ class PRGPipelineManager:
         main_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
 
         # Левая панель - ПРГ
-        prg_frame = tk.LabelFrame(main_frame, text="ПРГ (🟡 - без потребителей в том же районе+НП)",
+        prg_frame = tk.LabelFrame(main_frame, text="ПРГ",
                                   bg=colors['bg'], fg=colors['text'],
                                   font=('Segoe UI', 11, 'bold'),
                                   borderwidth=1, relief='solid',
@@ -255,7 +255,7 @@ class PRGPipelineManager:
         self.calculate_load_button.pack(pady=5)
 
         # Правая панель - Потребители
-        consumer_frame = tk.LabelFrame(main_frame, text="Потребители (🟡 - без ПРГ, 🚫 - без расходов)",
+        consumer_frame = tk.LabelFrame(main_frame, text="Потребители (🟡 - без ПРГ или доли>1, 🔵 - доли<1, 🚫 - без расходов)",
                                        bg=colors['bg'], fg=colors['text'],
                                        font=('Segoe UI', 11, 'bold'),
                                        borderwidth=1, relief='solid',
@@ -400,12 +400,59 @@ class PRGPipelineManager:
 
     def show_settings_dialog(self):
         """Диалог настройки таблиц перед загрузкой"""
-        # TODO: Implement settings dialog
-        # For now, just load data with default settings
+        # Ask user if they want to check settings first
+        response = messagebox.askyesnocancel(
+            "Загрузка данных",
+            f"Файл: {self.excel_path.name}\n\n"
+            f"Загрузить данные с текущими настройками?\n\n"
+            f"Да - загрузить сейчас\n"
+            f"Нет - открыть настройки столбцов\n"
+            f"Отмена - отменить открытие файла"
+        )
+
+        if response is None:  # Cancel
+            self.excel_path = None
+            self.file_label.config(text="Файл не выбран")
+            return
+        elif response is False:  # No - show settings
+            self.open_settings_dialog()
+            return
+
+        # Yes - load data
         try:
             self.load_all_data()
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка загрузки данных: {str(e)}")
+
+    def open_settings_dialog(self):
+        """Открыть диалог настройки столбцов"""
+        try:
+            from prg.ui.dialogs import SettingsDialog
+
+            dialog = SettingsDialog(
+                self.root,
+                self.settings_manager,
+                self.style_manager
+            )
+
+            # If settings were saved and file is loaded, ask to reload
+            if dialog.result and self.excel_path:
+                response = messagebox.askyesno(
+                    "Перезагрузка данных",
+                    "Настройки сохранены!\n\n"
+                    "Перезагрузить данные из текущего файла с новыми настройками?"
+                )
+
+                if response:
+                    try:
+                        self.load_all_data()
+                    except Exception as e:
+                        messagebox.showerror("Ошибка", f"Ошибка загрузки данных: {str(e)}")
+
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка открытия диалога настроек:\n\n{str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def load_all_data(self):
         """Загрузка всех данных из Excel"""
@@ -439,12 +486,28 @@ class PRGPipelineManager:
         unbound_consumers = self.validation_service.find_unbound_consumers(self.consumer_data)
         no_expenses = self.validation_service.find_consumers_without_expenses(self.consumer_data)
 
+        # Count population and organizations
+        population_count = sum(1 for c in self.consumer_data if c.get('type') == 'Население')
+        organization_count = sum(1 for c in self.consumer_data if c.get('type') == 'Организация')
+
+        # Get sheet names from settings
+        prg_sheet = self.settings_manager.get_table_settings('prg')['sheet']
+        grs_sheet = self.settings_manager.get_table_settings('grs')['sheet']
+        pop_sheet = self.settings_manager.get_table_settings('population')['sheet']
+        org_sheet = self.settings_manager.get_table_settings('organizations')['sheet']
+
         message = f"""✅ ДАННЫЕ УСПЕШНО ЗАГРУЖЕНЫ v7.4!
+
+📂 ИСТОЧНИКИ ДАННЫХ:
+• Лист "{prg_sheet}": ПРГ ({len(self.prg_data)})
+• Лист "{grs_sheet}": ГРС ({len(self.grs_data)})
+• Лист "{pop_sheet}": Население ({population_count})
+• Лист "{org_sheet}": Организации ({organization_count})
 
 📊 ОСНОВНАЯ СТАТИСТИКА:
 • ПРГ: {len(self.prg_data)}
 • ГРС: {len(self.grs_data)}
-• Потребители: {len(self.consumer_data)}
+• Потребители: {len(self.consumer_data)} (Население: {population_count}, Организации: {organization_count})
 
 🔍 АНАЛИЗ ПРИВЯЗОК:
 • ПРГ без потребителей: {len(unbound_prg)}
@@ -613,15 +676,7 @@ class PRGPipelineManager:
                     prg_id = prg.get('prg_id', '')
                     grs_id = prg.get('grs_id', '')
 
-                    # Check if PRG has consumers
-                    has_consumers = any(
-                        c.get('mo') == mo and c.get('settlement') == settlement
-                        for c in self.consumer_data
-                    )
-
                     display_text = f"🏭 {prg_id}"
-                    if not has_consumers:
-                        display_text = f"🟡 {prg_id}"
 
                     self.prg_tree.insert(settlement_node, 'end', text=display_text,
                                        values=(prg_id, grs_id),
@@ -636,61 +691,93 @@ class PRGPipelineManager:
         if not self.consumer_data:
             return
 
-        # Group by type -> district -> settlement
-        structure = {'Население': {}, 'Организация': {}}
+        # Group by district -> settlement -> type
+        structure = {}
 
         for consumer in self.consumer_data:
             c_type = consumer.get('type', '')
             mo = consumer.get('mo', '')
             settlement = consumer.get('settlement', '')
 
-            if c_type not in structure:
-                continue
+            if mo not in structure:
+                structure[mo] = {}
+            if settlement not in structure[mo]:
+                structure[mo][settlement] = {'Население': [], 'Организация': []}
 
-            if mo not in structure[c_type]:
-                structure[c_type][mo] = {}
-            if settlement not in structure[c_type][mo]:
-                structure[c_type][mo][settlement] = []
-
-            structure[c_type][mo][settlement].append(consumer)
+            if c_type in structure[mo][settlement]:
+                structure[mo][settlement][c_type].append(consumer)
 
         # Build tree
-        for c_type in ['Население', 'Организация']:
-            type_node = self.consumer_tree.insert('', 'end', text=f"👥 {c_type}", values=('', '', ''))
+        from prg.data.parsers import parse_prg_bindings, calculate_total_share
 
-            for mo in sorted(structure[c_type].keys()):
-                mo_node = self.consumer_tree.insert(type_node, 'end', text=f"📍 {mo}", values=('', '', ''))
+        for mo in sorted(structure.keys()):
+            mo_node = self.consumer_tree.insert('', 'end', text=f"📍 {mo}", values=('', '', ''))
 
-                for settlement in sorted(structure[c_type][mo].keys()):
-                    settlement_node = self.consumer_tree.insert(mo_node, 'end', text=f"🏘️ {settlement}",
-                                                              values=('', '', ''))
+            for settlement in sorted(structure[mo].keys()):
+                settlement_node = self.consumer_tree.insert(mo_node, 'end', text=f"🏘️ {settlement}",
+                                                          values=('', '', ''))
 
-                    for consumer in structure[c_type][mo][settlement]:
-                        name = consumer.get('name', consumer.get('settlement', ''))
-                        code = consumer.get('code', '')
+                # Add population consumers
+                for consumer in structure[mo][settlement]['Население']:
+                    name = consumer.get('name', consumer.get('settlement', ''))
+                    code = consumer.get('code', '')
 
-                        # Parse bindings
-                        from prg.data.parsers import parse_prg_bindings, calculate_total_share
-                        bindings = parse_prg_bindings(code)
-                        total_share = calculate_total_share(bindings)
+                    # Parse bindings
+                    bindings = parse_prg_bindings(code)
+                    total_share = calculate_total_share(bindings)
 
-                        # Check expenses
-                        has_expenses = self.validation_service.has_expenses(consumer)
+                    # Check expenses
+                    has_expenses = self.validation_service.has_expenses(consumer)
 
-                        # Display icon
-                        icon = "👤" if c_type == "Население" else "🏢"
-                        if not bindings:
-                            icon = "🟡"
-                        if not has_expenses:
-                            icon = "🚫"
+                    # Display icon based on state
+                    icon = "👤"
+                    if not has_expenses:
+                        icon = "🚫"
+                    elif not bindings:
+                        icon = "🟡"
+                    elif total_share > 1.01:  # Sum > 1 with tolerance
+                        icon = "🟡"
+                    elif total_share < 0.99 and bindings:  # Sum < 1 with tolerance
+                        icon = "🔵"
 
-                        display_text = f"{icon} {name}"
-                        binding_display = f"{len(bindings)} привязок" if bindings else "Нет"
-                        share_display = f"{total_share:.2f}" if bindings else ""
+                    display_text = f"{icon} {name}"
+                    binding_display = f"{len(bindings)} привязок" if bindings else "Нет"
+                    share_display = f"{total_share:.2f}" if bindings else ""
 
-                        self.consumer_tree.insert(settlement_node, 'end', text=display_text,
-                                                values=(c_type, binding_display, share_display),
-                                                tags=(consumer['id'],))
+                    self.consumer_tree.insert(settlement_node, 'end', text=display_text,
+                                            values=('Население', binding_display, share_display),
+                                            tags=(consumer['id'],))
+
+                # Add organization consumers
+                for consumer in structure[mo][settlement]['Организация']:
+                    name = consumer.get('name', '')
+                    code = consumer.get('code', '')
+
+                    # Parse bindings
+                    bindings = parse_prg_bindings(code)
+                    total_share = calculate_total_share(bindings)
+
+                    # Check expenses
+                    has_expenses = self.validation_service.has_expenses(consumer)
+
+                    # Display icon based on state
+                    icon = "🏢"
+                    if not has_expenses:
+                        icon = "🚫"
+                    elif not bindings:
+                        icon = "🟡"
+                    elif total_share > 1.01:  # Sum > 1 with tolerance
+                        icon = "🟡"
+                    elif total_share < 0.99 and bindings:  # Sum < 1 with tolerance
+                        icon = "🔵"
+
+                    display_text = f"{icon} {name}"
+                    binding_display = f"{len(bindings)} привязок" if bindings else "Нет"
+                    share_display = f"{total_share:.2f}" if bindings else ""
+
+                    self.consumer_tree.insert(settlement_node, 'end', text=display_text,
+                                            values=('Организация', binding_display, share_display),
+                                            tags=(consumer['id'],))
 
         print(f"[OK] Consumer tree populated with {len(self.consumer_data)} items")
 
@@ -744,6 +831,8 @@ class PRGPipelineManager:
         details += f"Район: {prg.get('mo', '')}\n"
         details += f"НП: {prg.get('settlement', '')}\n"
         details += f"ГРС ID: {prg.get('grs_id', '')}\n"
+        details += f"\nЛист Excel: {prg.get('sheet_name', '')}\n"
+        details += f"Строка Excel: {prg.get('excel_row', '')}\n"
 
         self.detail_text.insert(1.0, details)
         self.detail_text.config(state=tk.DISABLED)
@@ -830,71 +919,222 @@ class PRGPipelineManager:
             self.consumer_data, mo, settlement
         )
 
-        if consumers_in_settlement.total_count == 0:
-            messagebox.showwarning(
-                "Предупреждение",
-                f"В населенном пункте '{settlement}' района '{mo}' нет потребителей."
-            )
-            return
 
-        # Ask for confirmation
-        response = messagebox.askyesno(
-            "Подтверждение привязки",
-            f"Привязать ПРГ {prg_id} ко всем потребителям в:\n\n"
-            f"Район: {mo}\n"
-            f"НП: {settlement}\n\n"
-            f"Найдено потребителей: {consumers_in_settlement.total_count}\n"
-            f"  - С расходами: {consumers_in_settlement.with_expenses_count}\n"
-            f"  - Без расходов: {consumers_in_settlement.without_expenses_count}\n\n"
-            f"Потребители без расходов будут пропущены.\n"
-            f"Продолжить?"
+
+        # Count by type
+        population_count = sum(1 for c in consumers_in_settlement.matches if c.get('type') == 'Население')
+        organization_count = sum(1 for c in consumers_in_settlement.matches if c.get('type') == 'Организация')
+
+        # Show dialog to configure binding
+        colors = self.style_manager.colors
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Привязка ко всему населенному пункту")
+        dialog.geometry("600x550")
+        dialog.resizable(True, True)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.configure(bg=colors['bg'])
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() - dialog.winfo_width()) // 2
+        y = (dialog.winfo_screenheight() - dialog.winfo_height()) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+        main_frame = tk.Frame(dialog, padx=20, pady=20, bg=colors['bg'])
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Title
+        tk.Label(main_frame, text="ПРИВЯЗКА КО ВСЕМУ НП",
+                 font=('Segoe UI', 14, 'bold'), fg=colors['primary'],
+                 bg=colors['bg']).pack(pady=(0, 15))
+
+        # PRG info
+        prg_frame = tk.LabelFrame(main_frame, text="ПРГ", font=('Segoe UI', 10, 'bold'),
+                                 bg=colors['bg'], fg=colors['text'], borderwidth=1, relief='solid')
+        prg_frame.pack(fill=tk.X, pady=(0, 10))
+        tk.Label(prg_frame, text=f"ПРГ ID: {prg_id}", font=('Segoe UI', 10),
+                bg=colors['bg'], fg=colors['text']).pack(anchor=tk.W, padx=10, pady=5)
+        tk.Label(prg_frame, text=f"Район: {mo}", font=('Segoe UI', 10),
+                bg=colors['bg'], fg=colors['text']).pack(anchor=tk.W, padx=10)
+        tk.Label(prg_frame, text=f"НП: {settlement}", font=('Segoe UI', 10),
+                bg=colors['bg'], fg=colors['text']).pack(anchor=tk.W, padx=10, pady=(0, 5))
+
+        # Settlement info
+        settlement_frame = tk.LabelFrame(main_frame, text="Потребители в НП", font=('Segoe UI', 10, 'bold'),
+                                        bg=colors['bg'], fg=colors['text'], borderwidth=1, relief='solid')
+        settlement_frame.pack(fill=tk.X, pady=(0, 10))
+        tk.Label(settlement_frame, text=f"Всего потребителей: {consumers_in_settlement.total_count}",
+                font=('Segoe UI', 10), bg=colors['bg'], fg=colors['text']).pack(anchor=tk.W, padx=10, pady=5)
+        tk.Label(settlement_frame, text=f"  • Население: {population_count}",
+                font=('Segoe UI', 10), bg=colors['bg'], fg=colors['text']).pack(anchor=tk.W, padx=10)
+        tk.Label(settlement_frame, text=f"  • Организации: {organization_count}",
+                font=('Segoe UI', 10), bg=colors['bg'], fg=colors['text']).pack(anchor=tk.W, padx=10)
+        tk.Label(settlement_frame, text=f"С расходами: {consumers_in_settlement.with_expenses_count}",
+                font=('Segoe UI', 10), bg=colors['bg'], fg=colors['success']).pack(anchor=tk.W, padx=10)
+        tk.Label(settlement_frame, text=f"Без расходов: {consumers_in_settlement.without_expenses_count}",
+                font=('Segoe UI', 10), bg=colors['bg'], fg=colors['danger']).pack(anchor=tk.W, padx=10, pady=(0, 5))
+
+        # Share input
+        share_frame = tk.Frame(main_frame, bg=colors['bg'])
+        share_frame.pack(fill=tk.X, pady=10)
+        tk.Label(share_frame, text="Доля привязки:", font=('Segoe UI', 11, 'bold'),
+                bg=colors['bg'], fg=colors['text']).pack(side=tk.LEFT)
+        share_var = tk.StringVar(value="1.0")
+        share_entry = tk.Entry(share_frame, textvariable=share_var, font=('Segoe UI', 11),
+                              width=10, bg=colors['bg_panel'], fg=colors['text'])
+        share_entry.pack(side=tk.LEFT, padx=10)
+        tk.Label(share_frame, text="(от 0 до 1)", font=('Segoe UI', 9),
+                bg=colors['bg'], fg=colors['text_secondary']).pack(side=tk.LEFT)
+
+        # Consumer type selection
+        type_frame = tk.LabelFrame(main_frame, text="Типы потребителей для привязки",
+                                   font=('Segoe UI', 10, 'bold'),
+                                   bg=colors['bg'], fg=colors['text'], borderwidth=1, relief='solid')
+        type_frame.pack(fill=tk.X, pady=(0, 15))
+
+        bind_population = tk.BooleanVar(value=True)
+        bind_organizations = tk.BooleanVar(value=True)
+
+        pop_check = tk.Checkbutton(type_frame, text=f"Население ({population_count})",
+                                   variable=bind_population, font=('Segoe UI', 10),
+                                   bg=colors['bg'], fg=colors['text'],
+                                   selectcolor=colors['bg_panel'], activebackground=colors['bg'])
+        pop_check.pack(anchor=tk.W, padx=10, pady=5)
+
+        org_check = tk.Checkbutton(type_frame, text=f"Организации ({organization_count})",
+                                   variable=bind_organizations, font=('Segoe UI', 10),
+                                   bg=colors['bg'], fg=colors['text'],
+                                   selectcolor=colors['bg_panel'], activebackground=colors['bg'])
+        org_check.pack(anchor=tk.W, padx=10, pady=(0, 5))
+
+        # Warning
+        warning_text = "Потребители без расходов будут пропущены автоматически."
+        tk.Label(main_frame, text=warning_text, font=('Segoe UI', 9, 'italic'),
+                 fg=colors['text_secondary'], bg=colors['bg'],
+                 wraplength=550).pack(pady=(0, 15))
+
+        result_holder = {'success': False, 'result': None}
+
+        def do_bind():
+            try:
+                share = float(share_var.get().replace(',', '.'))
+                if share <= 0 or share > 1:
+                    messagebox.showerror("Ошибка", "Доля должна быть от 0 до 1", parent=dialog)
+                    return
+
+                if not bind_population.get() and not bind_organizations.get():
+                    messagebox.showerror("Ошибка", "Выберите хотя бы один тип потребителей", parent=dialog)
+                    return
+
+                # Filter consumers by selected types
+                consumers_to_bind = []
+                for consumer in consumers_in_settlement.matches:
+                    c_type = consumer.get('type', '')
+                    if c_type == 'Население' and bind_population.get():
+                        consumers_to_bind.append(consumer)
+                    elif c_type == 'Организация' and bind_organizations.get():
+                        consumers_to_bind.append(consumer)
+
+                if not consumers_to_bind:
+                    messagebox.showwarning("Предупреждение", "Нет потребителей для привязки", parent=dialog)
+                    return
+
+                # Perform binding
+                result_holder['success'] = True
+                result_holder['share'] = share
+                result_holder['consumers'] = consumers_to_bind
+                dialog.destroy()
+
+            except ValueError:
+                messagebox.showerror("Ошибка", "Введите корректную долю (например: 0.5)", parent=dialog)
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка: {str(e)}", parent=dialog)
+
+        def do_cancel():
+            """Cancel and close dialog"""
+            dialog.destroy()
+
+        # Bind keyboard shortcuts
+        dialog.bind('<Return>', lambda e: do_bind())
+        dialog.bind('<Escape>', lambda e: do_cancel())
+        share_entry.bind('<Return>', lambda e: do_bind())
+
+        # Buttons
+        button_frame = tk.Frame(main_frame, bg=colors['bg'])
+        button_frame.pack(fill=tk.X)
+
+        bind_btn = self.style_manager.create_button(
+            button_frame, text="Привязать (Enter)",
+            command=do_bind, color='success', width=18
         )
+        bind_btn.pack(side=tk.RIGHT, padx=(10, 0))
 
-        if not response:
-            return
+        cancel_btn = self.style_manager.create_button(
+            button_frame, text="Отмена (Esc)",
+            command=do_cancel, color='text_secondary', width=15
+        )
+        cancel_btn.config(bg=colors['text_secondary'])
+        self.style_manager.add_button_hover(cancel_btn, colors['text_secondary'], colors['text_muted'])
+        cancel_btn.pack(side=tk.RIGHT)
 
-        try:
-            # Create a dummy consumer for the binding service (it uses target_consumer to get mo/settlement)
-            dummy_consumer = {
-                'mo': mo,
-                'settlement': settlement
-            }
+        # Focus on share entry
+        share_entry.focus_set()
 
-            result = self.binding_service.bind_prg_to_settlement(
-                self.selected_prg,
-                dummy_consumer,
-                self.consumer_data,
-                grs_name,
-                share=1.0
-            )
+        dialog.wait_window()
 
-            # Add changes to tracking
-            for change in result.changes:
-                self.changes[change['change_id']] = change
+        # If user confirmed, perform binding
+        if result_holder['success']:
+            try:
+                success_count = 0
+                skipped_count = 0
+                already_bound_count = 0
+                errors = []
 
-            # Update UI
-            self.populate_consumer_tree()
-            self.update_changes_display()
-            self.update_button_states()
+                for consumer in result_holder['consumers']:
+                    result = self.binding_service.bind_single_consumer(
+                        consumer,
+                        self.selected_prg,
+                        grs_name,
+                        result_holder['share'],
+                        force=False
+                    )
 
-            # Show result
-            messagebox.showinfo(
-                "Результат привязки",
-                f"Привязка ПРГ {prg_id} завершена:\n\n"
-                f"Успешно привязано: {result.success_count}\n"
-                f"Пропущено: {result.skipped_count}\n"
-                f"Уже привязано: {result.already_bound_count}\n"
-                f"Ошибок: {len(result.errors)}\n\n"
-                f"Не забудьте сохранить изменения!"
-            )
+                    if result.success_count > 0:
+                        success_count += 1
+                        for change in result.changes:
+                            self.changes[change['change_id']] = change
+                    elif result.already_bound_count > 0:
+                        already_bound_count += 1
+                    else:
+                        skipped_count += 1
+                        if result.errors:
+                            errors.extend(result.errors)
 
-            print(f"[OK] Settlement binding: {result.success_count} success, {result.skipped_count} skipped")
+                # Update UI
+                self.populate_consumer_tree()
+                self.update_changes_display()
+                self.update_button_states()
 
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка привязки:\n\n{str(e)}")
-            print(f"[ERROR] {e}")
-            import traceback
-            traceback.print_exc()
+                # Show result
+                messagebox.showinfo(
+                    "Результат привязки",
+                    f"Привязка ПРГ {prg_id} завершена:\n\n"
+                    f"Успешно привязано: {success_count}\n"
+                    f"Пропущено: {skipped_count}\n"
+                    f"Уже привязано: {already_bound_count}\n"
+                    f"Ошибок: {len(errors)}\n\n"
+                    f"Не забудьте сохранить изменения!"
+                )
+
+                print(f"[OK] Settlement binding: {success_count} success, {skipped_count} skipped")
+
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка привязки:\n\n{str(e)}")
+                print(f"[ERROR] {e}")
+                import traceback
+                traceback.print_exc()
 
     def unbind_entire_settlement(self):
         """Отвязать весь населенный пункт"""
@@ -1306,8 +1546,8 @@ class PRGPipelineManager:
 
         dialog = tk.Toplevel(self.root)
         dialog.title("Ручная привязка")
-        dialog.geometry("500x400")
-        dialog.resizable(False, False)
+        dialog.geometry("600x500")
+        dialog.resizable(True, True)
         dialog.transient(self.root)
         dialog.grab_set()
         dialog.configure(bg=colors['bg'])
@@ -1416,24 +1656,36 @@ class PRGPipelineManager:
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Ошибка привязки: {str(e)}", parent=dialog)
 
+        def do_cancel():
+            """Cancel and close dialog"""
+            dialog.destroy()
+
+        # Bind keyboard shortcuts
+        dialog.bind('<Return>', lambda e: do_bind())
+        dialog.bind('<Escape>', lambda e: do_cancel())
+        share_entry.bind('<Return>', lambda e: do_bind())
+
         # Buttons
         button_frame = tk.Frame(main_frame, bg=colors['bg'])
         button_frame.pack(fill=tk.X, pady=(15, 0))
 
         bind_btn = self.style_manager.create_button(
-            button_frame, text="Привязать принудительно",
+            button_frame, text="Подтвердить (Enter)",
             command=do_bind, color='danger', width=20
         )
         bind_btn.pack(side=tk.RIGHT, padx=(10, 0))
 
         cancel_btn = self.style_manager.create_button(
-            button_frame, text="Отмена",
-            command=dialog.destroy, color='text_secondary', width=10
+            button_frame, text="Отмена (Esc)",
+            command=do_cancel, color='text_secondary', width=15
         )
         # Override color for cancel button
         cancel_btn.config(bg=colors['text_secondary'])
         self.style_manager.add_button_hover(cancel_btn, colors['text_secondary'], colors['text_muted'])
         cancel_btn.pack(side=tk.RIGHT)
+
+        # Focus on share entry
+        share_entry.focus_set()
 
         dialog.wait_window()
 
@@ -1591,8 +1843,8 @@ class PRGPipelineManager:
 
         dialog = tk.Toplevel(self.root)
         dialog.title("Редактирование долей")
-        dialog.geometry("600x500")
-        dialog.resizable(False, False)
+        dialog.geometry("700x600")
+        dialog.resizable(True, True)
         dialog.transient(self.root)
         dialog.grab_set()
         dialog.configure(bg=colors['bg'])
@@ -1754,19 +2006,27 @@ class PRGPipelineManager:
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Ошибка сохранения: {str(e)}", parent=dialog)
 
+        def do_cancel():
+            """Cancel and close dialog"""
+            dialog.destroy()
+
+        # Bind keyboard shortcuts
+        dialog.bind('<Return>', lambda e: save_shares())
+        dialog.bind('<Escape>', lambda e: do_cancel())
+
         # Buttons
         button_frame = tk.Frame(main_frame, bg=colors['bg'])
         button_frame.pack(fill=tk.X)
 
         save_btn = self.style_manager.create_button(
-            button_frame, text="Сохранить",
-            command=save_shares, color='success', width=15
+            button_frame, text="Сохранить (Enter)",
+            command=save_shares, color='success', width=18
         )
         save_btn.pack(side=tk.RIGHT, padx=(10, 0))
 
         cancel_btn = self.style_manager.create_button(
-            button_frame, text="Отмена",
-            command=dialog.destroy, color='text_secondary', width=10
+            button_frame, text="Отмена (Esc)",
+            command=do_cancel, color='text_secondary', width=15
         )
         cancel_btn.config(bg=colors['text_secondary'])
         self.style_manager.add_button_hover(cancel_btn, colors['text_secondary'], colors['text_muted'])
